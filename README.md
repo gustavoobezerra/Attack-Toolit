@@ -1,3 +1,22 @@
+## ⚠️ Aviso Legal / Isenção de Responsabilidade (Disclaimer)
+
+Este projeto foi desenvolvido **estritamente para fins educacionais, acadêmicos e de pesquisa em segurança da informação**.
+
+* **Uso Restrito e Autorizado:** As ferramentas, scripts e códigos contidos neste repositório destinam-se exclusivamente a testes em ambientes controlados (laboratórios locais, CTFs) ou em redes e sistemas mediante autorização prévia, expressa e por escrito do proprietário.
+* **Isenção de Responsabilidade:** O autor não incentiva, não apoia e não se responsabiliza pelo uso indevido, malicioso ou ilegal das informações e ferramentas aqui disponibilizadas, nem por eventuais danos materiais, operacionais ou perda de dados causados por terceiros.
+* **Conformidade Legal:** É de inteira responsabilidade do usuário operar em total conformidade com as legislações vigentes, incluindo o Código Penal Brasileiro (Art. 154-A — Lei nº 12.737/2012) e a Lei Geral de Proteção de Dados (Lei nº 13.709/2018). Invadir ou testar dispositivos alheios sem consentimento é crime.
+
+Ao utilizar ou executar qualquer conteúdo deste repositório, você declara estar ciente e concordar integralmente com estes termos.
+
+## ⚠️ Disclaimer
+
+This repository and its contents are developed strictly for **educational and security research purposes only**.
+
+* **Authorized Use Only:** The tools, scripts, and documentation provided here are intended solely for controlled environments (local labs, CTFs) or systems for which you have explicit, prior written authorization from the system owner.
+* **Limitation of Liability:** The author assumes no liability and shall not be held responsible for any misuse, damage, data loss, service interruption, or legal consequences resulting from the execution of this code.
+* **Legal Compliance:** Users are solely responsible for adhering to all applicable local, national, and international laws. Unauthorized access to computer systems, networks, or digital devices is illegal.
+
+By downloading, viewing, or running any component of this project, you acknowledge and agree to these terms.
 #  Attack Toolkit
 
 Estrutura modular de scripts ofensivos organizados por categoria.
