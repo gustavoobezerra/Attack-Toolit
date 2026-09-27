@@ -1,4 +1,4 @@
-# paralelepipedo — Attack Toolkit
+#  Attack Toolkit
 
 Estrutura modular de scripts ofensivos organizados por categoria.
 
